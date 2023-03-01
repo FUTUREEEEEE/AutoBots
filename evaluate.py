@@ -61,7 +61,7 @@ class Evaluator:
 
         self.val_loader = torch.utils.data.DataLoader(
             val_dset, batch_size=self.args.batch_size, shuffle=True, num_workers=12, drop_last=False,
-            pin_memory=False
+            pin_memory=True
         )
 
         print("Val dataset loaded with length", len(val_dset))

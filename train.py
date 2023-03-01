@@ -285,7 +285,13 @@ class Trainer:
                   "minFDE c:", val_minfde_c[0], "minFDE_1:", val_minfde_1[0])
             self.autobot_model.train()
             self.save_model(minade_k=val_minade_c[0], minfde_k=val_minfde_c[0])
-
+    def load_pretrain(self):
+        print("################# WARNING: load ckpt!##################")
+        pretrain_path="/root/autodl-tmp/interaction/AutoBots.new/results/interaction-dataset/Autobot_joint_C6_H128_E2_D2_TXH384_NH16_EW40_KLW20_NormLoss_roadLanes_inter_with_map_s1/best_models_ade.pth"
+        
+        self.autobot_model.load_state_dict(torch.load(pretrain_path)["AutoBot"])
+        # self.optimiser.load_state_dict(torch.load(pretrain_path)["optimiser"])
+        
     def autobotjoint_train(self):
         steps = 0
         for epoch in range(0, self.args.num_epochs):
@@ -458,4 +464,5 @@ class Trainer:
 if __name__ == "__main__":
     args, results_dirname = get_train_args()
     trainer = Trainer(args, results_dirname)
+    # trainer.load_pretrain()
     trainer.train()

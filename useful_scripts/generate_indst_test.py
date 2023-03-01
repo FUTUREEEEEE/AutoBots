@@ -3,6 +3,8 @@ import csv
 import os
 import glob
 from collections import namedtuple
+import sys
+sys.path.append('/root/autodl-tmp/interaction/AutoBots') 
 
 import pandas as pd
 import xml.etree.ElementTree as xml

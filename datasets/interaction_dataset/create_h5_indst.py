@@ -4,6 +4,8 @@ import glob
 import os
 import pandas as pd
 import numpy as np
+import sys
+sys.path.append('/root/autodl-tmp/interaction/AutoBots') 
 from datasets.interaction_dataset.utils import get_minmax_mapfile
 
 
