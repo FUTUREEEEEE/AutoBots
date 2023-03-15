@@ -14,7 +14,7 @@ from models.autobot_ego import AutoBotEgo
 import torch
 import torch.distributions as D
 from torch import optim, nn
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR,CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
 
 from utils.metric_helpers import min_xde_K
@@ -38,8 +38,10 @@ class Trainer:
         self.initialize_model()
         self.optimiser = optim.Adam(self.autobot_model.parameters(), lr=self.args.learning_rate,
                                     eps=self.args.adam_epsilon)
-        self.optimiser_scheduler = MultiStepLR(self.optimiser, milestones=args.learning_rate_sched, gamma=0.5,
-                                               verbose=True)
+        
+        self.optimiser_scheduler = CosineAnnealingLR(self.optimiser,T_max=args.num_epochs)
+        # self.optimiser_scheduler = MultiStepLR(self.optimiser, milestones=args.learning_rate_sched, gamma=0.5,
+        #                                        verbose=True)
 
         self.writer = SummaryWriter(log_dir=os.path.join(self.results_dirname, "tb_files"))
         self.smallest_minade_k = 5.0  # for computing best models
@@ -56,7 +58,7 @@ class Trainer:
 
         elif "interaction-dataset" in self.args.dataset:
             train_dset = InteractionDataset(dset_path=self.args.dataset_path, split_name="train",
-                                            use_map_lanes=self.args.use_map_lanes, evaluation=False)
+                                            use_map_lanes=self.args.use_map_lanes, evaluation=False,augment_data=True)
             val_dset = InteractionDataset(dset_path=self.args.dataset_path, split_name="val",
                                           use_map_lanes=self.args.use_map_lanes, evaluation=False)
 
@@ -290,6 +292,16 @@ class Trainer:
         pretrain_path="/root/autodl-tmp/interaction/AutoBots.new/results/interaction-dataset/Autobot_joint_C6_H128_E2_D2_TXH384_NH16_EW40_KLW20_NormLoss_roadLanes_inter_with_map_s1/best_models_ade.pth"
         
         self.autobot_model.load_state_dict(torch.load(pretrain_path)["AutoBot"])
+        
+        params = [
+        {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" not in n], "weight_decay": 1e-4}, # 对权重使用weight_decay
+        {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" in n], "weight_decay": 0.0}, # 对偏置不使用weight_decay
+        ]
+        
+        self.optimiser = optim.Adam(params, lr=self.args.learning_rate,
+                            eps=self.args.adam_epsilon)
+        
+        # self.optimiser_scheduler = CosineAnnealingLR(self.optimiser,T_max=args.num_epochs)
         # self.optimiser.load_state_dict(torch.load(pretrain_path)["optimiser"])
         
     def autobotjoint_train(self):

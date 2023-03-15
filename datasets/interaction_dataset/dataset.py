@@ -5,13 +5,14 @@ import glob
 import matplotlib.pyplot as plt
 from sklearn.metrics import euclidean_distances
 from torch.utils.data import Dataset
+import math
 import numpy as np
 from datasets.interaction_dataset.utils import LL2XYProjector, Point, get_type, get_subtype, get_x_y_lists, \
     get_relation_members
 
 
 class InteractionDataset(Dataset):
-    def __init__(self, dset_path, split_name="train", evaluation=False, use_map_lanes=True):
+    def __init__(self, dset_path, split_name="train", evaluation=False, use_map_lanes=True,augment_data=False):
         self.data_root = dset_path
         self.split_name = split_name
         self.pred_horizon = 15
@@ -20,6 +21,8 @@ class InteractionDataset(Dataset):
         self.predict_yaw = True
         self.map_attr = 7
         self.k_attr = 8
+        
+        self.augment_data=augment_data
 
         dataset = h5py.File(os.path.join(self.data_root, split_name + '_dataset.hdf5'), 'r')
         self.dset_len = len(dataset["agents_trajectories"])
@@ -270,7 +273,7 @@ class InteractionDataset(Dataset):
 
         return new_ego_in, new_ego_out, new_agents_in, new_agents_out, new_roads
 
-    def _plot_debug(self, ego_in, ego_out, agents_in, agents_out, roads):
+    def _plot_debug(self, ego_in, ego_out, agents_in, agents_out, roads,idx):
         for n in range(self.num_others + 1):
             plt.figure()
             if n == 0:
@@ -284,17 +287,40 @@ class InteractionDataset(Dataset):
                 for p in range(roads.shape[2]):
                     if roads[n, s, p, -1]:
                         plt.scatter(roads[n, s, p, 0], roads[n, s, p, 1], color='g')
-            plt.show()
-        exit()
+            # plt.show()
+            plt.savefig(f"pics/{n}_{idx}.png")
+            break
+        # exit()
 
     def __getitem__(self, idx: int):
+        def rotate_pc(pc, alpha):
+            M = np.array([[np.cos(alpha), -np.sin(alpha)],
+                        [np.sin(alpha), np.cos(alpha)]])
+            if len(pc.shape)==3:
+                return (M @ pc.swapaxes(1,2)).swapaxes(1,2)
+            else:
+                return (M @ pc.T).T
+        
+        
         dataset = h5py.File(os.path.join(self.data_root, self.split_name + '_dataset.hdf5'), 'r')
-        agents_data = dataset['agents_trajectories'][idx]
+        agents_data = dataset['agents_trajectories'][idx]  #'x', 'y', 'vx', 'vy', 'psi_rad', 'length', 'width'        
         agent_types = dataset['agents_types'][idx]
         meta_data = dataset['metas'][idx]
         if not self.evaluation:
             agents_data = agents_data[:, 1::2]  # downsampling for efficiency during training.
 
+        if self.augment_data:
+            rand_angle = np.random.uniform(-180, 180) # 生成一个-180到180之间的随机数
+            rand_angle = np.round(rand_angle / 15) * 15 # 对其除以15并四舍五入，再乘以15
+
+            angle=math.radians(rand_angle)
+            agents_data[:,:,4]=(agents_data[:,:,4]+angle) #左乘旋转矩阵相当于逆时针旋转，
+
+            psi_rad=agents_data[:,:,4]
+            psi_rad=np.where(psi_rad>np.pi,psi_rad-2*np.pi,psi_rad) #重新换算到-pi~pi
+            psi_rad=np.where(psi_rad<-np.pi,psi_rad+2*np.pi,psi_rad)
+            agents_data[:,:,4]=psi_rad
+        
         road_fname_key = dataset['map_paths'][idx][0].decode("utf-8").split("/")[-1]
         roads = self.roads[road_fname_key].copy()
         roads[:, :, :2] -= np.expand_dims(np.array([meta_data[:2]]), 0)
@@ -303,8 +329,25 @@ class InteractionDataset(Dataset):
         original_roads[:len(roads)] = roads
         roads = original_roads.copy()
 
+        #ego_in output : 'x', 'y', 'vx', 'vy', 'psi_rad', 'length', 'width' 'mask'
         ego_in, ego_out, agents_in, agents_out, agent_types = self.split_input_output_normalize(agents_data, meta_data,
                                                                                                 agent_types)
+        
+        if self.augment_data:
+            # print("here")
+            ego_in[:,:2]=rotate_pc(ego_in[:,:2],angle)
+            ego_in[:,2:4]=rotate_pc(ego_in[:,2:4],angle)
+
+
+            ego_out[:,:2]=rotate_pc(ego_out[:,:2],angle)
+
+            agents_in[:,:,:2]=rotate_pc(agents_in[:,:,:2],angle)
+            agents_in[:,:,2:4]=rotate_pc(agents_in[:,:,2:4],angle)
+
+            agents_out[:,:,:2]=rotate_pc(agents_out[:,:,:2],angle)
+
+            roads[:, :, :2]=rotate_pc(roads[:, :, :2],angle)
+    
         roads = self.copy_agent_roads_across_agents(agents_in, roads)
 
         # normalize scenes so all agents are going up
