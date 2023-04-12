@@ -39,9 +39,9 @@ class Trainer:
         self.optimiser = optim.Adam(self.autobot_model.parameters(), lr=self.args.learning_rate,
                                     eps=self.args.adam_epsilon)
         
-        self.optimiser_scheduler = CosineAnnealingLR(self.optimiser,T_max=args.num_epochs)
-        # self.optimiser_scheduler = MultiStepLR(self.optimiser, milestones=args.learning_rate_sched, gamma=0.5,
-        #                                        verbose=True)
+        # self.optimiser_scheduler = CosineAnnealingLR(self.optimiser,T_max=args.num_epochs)
+        self.optimiser_scheduler = MultiStepLR(self.optimiser, milestones=args.learning_rate_sched, gamma=0.5,
+                                               verbose=True)
 
         self.writer = SummaryWriter(log_dir=os.path.join(self.results_dirname, "tb_files"))
         self.smallest_minade_k = 5.0  # for computing best models
@@ -293,13 +293,19 @@ class Trainer:
         
         self.autobot_model.load_state_dict(torch.load(pretrain_path)["AutoBot"])
         
-        params = [
-        {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" not in n], "weight_decay": 1e-4}, # 对权重使用weight_decay
-        {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" in n], "weight_decay": 0.0}, # 对偏置不使用weight_decay
-        ]
         
-        self.optimiser = optim.Adam(params, lr=self.args.learning_rate,
-                            eps=self.args.adam_epsilon)
+        for param in self.autobot_model.parameters():
+            param.requires_grad = False
+            
+        for param in self.autobot_model.output_model.parameters():
+            param.requires_grad = True
+        # params = [
+        # {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" not in n], "weight_decay": 1e-4}, # 对权重使用weight_decay
+        # {"params": [p for n, p in self.autobot_model.named_parameters() if "bias" in n], "weight_decay": 0.0}, # 对偏置不使用weight_decay
+        # ]
+        
+        # self.optimiser = optim.Adam(params, lr=self.args.learning_rate,
+        #                     eps=self.args.adam_epsilon)
         
         # self.optimiser_scheduler = CosineAnnealingLR(self.optimiser,T_max=args.num_epochs)
         # self.optimiser.load_state_dict(torch.load(pretrain_path)["optimiser"])
@@ -476,5 +482,5 @@ class Trainer:
 if __name__ == "__main__":
     args, results_dirname = get_train_args()
     trainer = Trainer(args, results_dirname)
-    # trainer.load_pretrain()
+    trainer.load_pretrain()
     trainer.train()

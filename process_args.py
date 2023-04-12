@@ -115,7 +115,7 @@ def save_config(args, results_dirname):
 
 
 def load_config(model_path):
-    model_dirname = os.path.join(*model_path.split("/")[:-1])
+    model_dirname = os.path.dirname(model_path)#os.path.join(*model_path.split("/")[:-1])
     assert os.path.isdir(model_dirname)
     with open(os.path.join(model_dirname, 'config.json'), 'r') as fp:
         config = json.load(fp)

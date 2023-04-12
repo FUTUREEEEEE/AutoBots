@@ -9,8 +9,70 @@ from models.autobot_ego import AutoBotEgo
 from models.autobot_joint import AutoBotJoint
 from process_args import get_eval_args
 from utils.metric_helpers import min_xde_K, yaw_from_predictions, interpolate_trajectories, collisions_for_inter_dataset
+import matplotlib.pyplot as plt
+
+MAP_PLOT_CACHE={}
 
 
+def plot_gt_map(ego_in, ego_out, agents_in, agents_out, roads,idx):
+    num_others = agents_in.size(1)
+    agents_in=agents_in.permute(1,0,2) #to n,t,attr
+    agents_out=agents_out.permute(1,0,2)
+    
+    fig, ax = plt.subplots(dpi=300)
+
+    #plot map
+    # for s in range(roads.shape[0]):
+    #     for p in range(roads.shape[1]):
+    #         if roads[s, p, -1]:
+    #             ax.scatter(roads[ s, p, 0], roads[s, p, 1], color='g',s=1)
+    map_x=torch.masked_select(roads[:,:,0],roads[:,:,-1].bool()) 
+    map_y=torch.masked_select(roads[:,:,1],roads[:,:,-1].bool())     
+    ax.scatter(map_x,map_y, color='k',s=1)
+
+    for n in range(num_others + 1):
+        if n == 0:
+            ax.plot(ego_in[:, 0], ego_in[:, 1], color="#eca154")  #yellow obv
+            ax.plot(ego_out[:, 0], ego_out[:, 1], color='r')
+            ax.scatter(ego_out[-1, 0], ego_out[-1, 1], marker="o", color="r",s=5)
+        else:
+            if agents_in[n - 1, -1, -1]:
+                ax.plot(agents_in[n - 1, :, 0], agents_in[n - 1, :, 1], color="#eca154")
+                ax.plot(agents_out[n - 1, :, 0], agents_out[n - 1, :, 1], color='r')
+                ax.scatter(agents_out[n - 1,-1, 0], agents_out[n - 1,-1, 1], marker="o", color="r",s=5)
+
+    return fig,ax
+    # fig.savefig(f"pics/{idx}.png")
+    # print(f"save fig{idx}")
+import os
+def plot_pred(fig,ax,pred,i,mask,matrix,index=None):
+    
+    '''
+    plot pred result and save fig using matirx 
+    if pass index ,only the multimodal result corresponding to index be plot
+    i :act as id 
+    '''
+    num_others = mask.size(0)-1
+    num_mod=6
+    pred=pred.squeeze(2).permute(0,2,1,3) #to [mod,n,t,attr]
+    for n in range(num_others + 1):
+        if ~mask[n].bool():
+            continue
+        if index is not None:
+            ax.plot(pred[index,n,:, 0], pred[index,n,:, 1], color="#007672")
+            ax.scatter(pred[index,n,-1, 0], pred[index,n,-1, 1], marker="o", color="#007672",s=5)
+        else: 
+            for mod in range(num_mod):
+                
+                ax.plot(pred[mod,n,:, 0], pred[mod,n,:, 1], color="#007672")
+                ax.scatter(pred[mod,n,-1, 0], pred[mod,n,-1, 1], marker="o", color="#007672",s=5)
+        # break    
+    # fig.savefig(f"pics/{i}_{matrix:.3f}.png")
+    save_dir="pics_ms_merging/"
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+    fig.savefig(f"{save_dir}{i}_{matrix:.3f}.png")
+    
 class Evaluator:
     def __init__(self, args, model_config, model_dirname):
         self.args = args
@@ -60,7 +122,7 @@ class Evaluator:
             self.num_agent_types = val_dset.num_agent_types
 
         self.val_loader = torch.utils.data.DataLoader(
-            val_dset, batch_size=self.args.batch_size, shuffle=True, num_workers=12, drop_last=False,
+            val_dset, batch_size=self.args.batch_size, shuffle=False, num_workers=12, drop_last=False,
             pin_memory=True
         )
 
@@ -101,7 +163,10 @@ class Evaluator:
             raise NotImplementedError
 
         model_dicts = torch.load(self.args.models_path, map_location=self.device)
-        self.autobot_model.load_state_dict(model_dicts["AutoBot"])
+        try:
+            self.autobot_model.load_state_dict(model_dicts["AutoBot"])
+        except:
+            self.autobot_model.load_state_dict(model_dicts)
         self.autobot_model.eval()
 
         model_parameters = filter(lambda p: p.requires_grad, self.autobot_model.parameters())
@@ -191,7 +256,7 @@ class Evaluator:
 
                 if self.interact_eval:
                     pred_obs = interpolate_trajectories(pred_obs)
-                    pred_obs = yaw_from_predictions(pred_obs, orig_ego_in, orig_agents_in)
+                    pred_obs = yaw_from_predictions(pred_obs, orig_ego_in, orig_agents_in) # pred_obs 会在上面两步中转移到全局坐标系下
                     scene_collisions, pred_obs, vehicles_only = collisions_for_inter_dataset(pred_obs.cpu().numpy(),
                                                                                              agent_types.cpu().numpy(),
                                                                                              orig_ego_in.cpu().numpy(),
@@ -207,6 +272,10 @@ class Evaluator:
                 val_marg_mode_probs.append(
                     mode_probs.unsqueeze(1).repeat(1, self.num_other_agents + 1, 1).detach().cpu().numpy().reshape(
                         -1, self.model_config.num_modes))
+                #在全局坐标系下绘图，地图不会旋转
+                fig,ax=plot_gt_map(orig_ego_in[0].cpu(), ego_out[0].cpu(), orig_agents_in[0].cpu(), agents_out[0].cpu(), original_roads[0].cpu(),i)
+                mask=torch.cat([ego_in[0,:,-1].unsqueeze(-1),agents_in[0,:,:,-1]],dim=1)[0]#只用了第一个时间戳的mask
+                plot_pred(fig,ax,pred_obs.cpu(),i,mask,np.min(np.nanmean(ade_losses[0,mask.cpu().bool(),:],axis=0)),np.argmin(np.nanmean(ade_losses[0,mask.cpu().bool(),:],axis=0)))
 
                 # Joint metrics
                 scene_ade_losses, scene_fde_losses = self._compute_joint_errors(pred_obs, ego_out, agents_out)
@@ -233,7 +302,7 @@ class Evaluator:
             if self.interact_eval:
                 total_collisions = np.concatenate(total_collisions).mean()
                 print("Scene Collision Rate", total_collisions)
-
+        
     def autobotego_evaluate(self):
         with torch.no_grad():
             val_ade_losses = []

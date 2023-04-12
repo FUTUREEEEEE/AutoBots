@@ -5,3 +5,5 @@ pic/
 roads.npy
 *.png
 *.pkl
+*.log
+pics*/

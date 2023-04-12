@@ -372,7 +372,7 @@ class InteractionDataset(Dataset):
             ego_in = ego_in[1::2]
             agents_in = agents_in[:, 1::2]
             model_ego_in = ego_in.copy()
-            model_ego_in[:, 3:5] = 0.0
+            model_ego_in[:, 3:5] = 0.0  #全局坐标被覆盖
             ego_in[:, 0:2] = ego_in[:, 3:5]
             model_agents_in = agents_in.copy()
             model_agents_in[:, :, 3:5] = 0.0

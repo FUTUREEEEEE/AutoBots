@@ -37,7 +37,10 @@ def load_model(model_config, models_path, device):
                                  predict_yaw=True).to(device)
 
     model_dicts = torch.load(models_path, map_location=device)
-    autobot_model.load_state_dict(model_dicts["AutoBot"])
+    try:
+        autobot_model.load_state_dict(model_dicts["AutoBot"])
+    except:
+        autobot_model.load_state_dict(model_dicts)
     autobot_model.eval()
 
     model_parameters = filter(lambda p: p.requires_grad, autobot_model.parameters())
